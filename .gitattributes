@@ -1,0 +1,1 @@
+*gossip_store filter=lfs diff=lfs merge=lfs -text
