@@ -1,2 +1,4 @@
 goals
 .ipynb_checkpoints/
+.envrc
+.direnv/
