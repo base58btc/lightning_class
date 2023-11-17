@@ -64,6 +64,7 @@
             jq
             bitcoind
             clightning
+            git
             git-lfs
             pyln_client
             pyln_proto
