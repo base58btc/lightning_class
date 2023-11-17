@@ -64,6 +64,7 @@
             jq
             bitcoind
             clightning
+            magic-wormhole
             pyln_client
             pyln_proto
             pyln_bolt7
