@@ -10,14 +10,13 @@ wait_on = {
 #    'payment_hash': [(cltv_expiry, request_obj), ... ]
 }
 
-# two more things to change:
-# x if a block height gets reached, we fail the htlc
-# x re-write: give it a payment_hash to wait for
-#   but to release (unhodl) -> preimage
+# todo:
+# - fancy: make hodlinvoice be a replacement for invoice
+#          except pass in payment_hash (preimage not known)
+# - fancy2: save to datastore so we do the right thing across a restart
 
 @plugin.subscribe("block_added")
 def on_block_received(block_added, plugin, **kwargs):
-    print(block_added)
     # if block within range of timeout
     blockheight = block_added['height']
     hashes_to_del = []
