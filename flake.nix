@@ -96,8 +96,8 @@
           ];
           # Automatically run jupyter when entering the shell.
           shellHook = ''
-            mkdir -p .bitcoin
-            ${pkgs.bitcoind}/bin/bitcoind -regtest -daemon -fallbackfee=0.0000012 -datadir=.bitcoin
+            #mkdir -p .bitcoin
+            #${pkgs.bitcoind}/bin/bitcoind -regtest -daemon -fallbackfee=0.0000012 -datadir=.bitcoin
           '';
 
           BITCOIN_BIN_DIR= "${pkgs.bitcoind}/bin";
