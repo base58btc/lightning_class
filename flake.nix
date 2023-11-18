@@ -31,6 +31,18 @@
             doCheck = false;
             propagatedBuildInputs = [];
         };
+        bech32ref = pkgs.python3Packages.buildPythonPackage rec {
+            pname = "bech32ref";
+            version = "5f11b2e";
+            src = pkgs.fetchFromGitHub {
+              owner = "niftynei";
+              repo = "${pname}";
+              rev = "${version}";
+              sha256 = "sha256-fvR6y2FpEE5sWLDOGLCOR180W15P5t+PmroHRNbWQbA=";
+            };
+            doCheck = false;
+            propagatedBuildInputs = [];
+        };
         pyln_proto = pkgs.python3Packages.buildPythonPackage rec {
             pname = "pyln_proto";
             version = "87643bed";
@@ -69,6 +81,7 @@
             pyln_client
             pyln_proto
             pyln_bolt7
+            bech32ref
 
             (python3.withPackages (ps: with ps; with python3Packages; [
               jupyter
@@ -82,10 +95,15 @@
             ]))
           ];
           # Automatically run jupyter when entering the shell.
-          #shellHook = "jupyter notebook";
+          shellHook = ''
+            mkdir -p .bitcoin
+            ${pkgs.bitcoind}/bin/bitcoind -regtest -daemon -fallbackfee=0.0000012 -datadir=.bitcoin
+          '';
 
           BITCOIN_BIN_DIR= "${pkgs.bitcoind}/bin";
+          #PATH_TO_BITCOIN=".bitcoin";
           PATH_TO_LIGHTNING = "${clightning}/bin";
+          btcli="${pkgs.bitcoind}/bin/bitcoin-cli -regtest -datadir=.bitcoin";
         };
       });
 }
