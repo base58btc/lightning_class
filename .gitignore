@@ -2,3 +2,4 @@ goals
 .ipynb_checkpoints/
 .envrc
 .direnv/
+.bitcoin/
