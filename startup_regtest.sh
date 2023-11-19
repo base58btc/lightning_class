@@ -107,25 +107,26 @@ start_nodes() {
 		mkdir -p "$PATH_TO_LIGHTNING/l$i"
 		# Node config
 		cat <<- EOF > "$PATH_TO_LIGHTNING/l$i/config"
-		network=$network
-		log-level=debug
-		log-file=$PATH_TO_LIGHTNING/l$i/$network/log
-		addr=localhost:$socket
-		allow-deprecated-apis=false
-		developer
-		dev-fast-gossip
-		dev-bitcoind-poll=5
-		experimental-dual-fund
-		experimental-splicing
-		experimental-offers
-		funder-policy=match
-		funder-policy-mod=100
-		funder-min-their-funding=10000
-		funder-per-channel-max=100000
-		funder-fuzz-percent=0
-		lease-fee-base-sat=2sat
-		lease-fee-basis=50
-		invoices-onchain-fallback
+network=$network
+log-level=debug
+log-file=$PATH_TO_LIGHTNING/l$i/$network/log
+addr=localhost:$socket
+allow-deprecated-apis=false
+developer
+dev-fast-gossip
+dev-bitcoind-poll=5
+experimental-dual-fund
+experimental-splicing
+experimental-offers
+funder-policy=match
+funder-policy-mod=100
+funder-min-their-funding=10000sats
+funder-per-channel-max=0.1btc
+funder-fuzz-percent=0
+funder-lease-requests-only=false
+lease-fee-base-sat=2sat
+lease-fee-basis=50
+invoices-onchain-fallback
 		EOF
 
         # Make sure the log file exists?
@@ -232,8 +233,6 @@ fund_nodes() {
 
 	WALLET="-rpcwallet=$WALLET"
 
-	ADDRESS=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" getnewaddress)
-
 	ensure_bitcoind_funds
 
 	last_node=""
@@ -254,19 +253,25 @@ fund_nodes() {
 
 		$LCLI -H --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" connect "$L2_NODE_ID"@localhost:"$L2_NODE_PORT" > /dev/null
 
+        # Fund both nodes, let's do a dual funded channel :)
 		L1_WALLET_ADDR=$($LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" newaddr | sed -n 's/^bech32=\(.*\)/\1/p')
+		L2_WALLET_ADDR=$($LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node2" newaddr | sed -n 's/^bech32=\(.*\)/\1/p')
 
 		ensure_bitcoind_funds
 
-		echo "$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" sendtoaddress "$L1_WALLET_ADDR" 1 > /dev/null
 		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" sendtoaddress "$L1_WALLET_ADDR" 1 > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" sendtoaddress "$L2_WALLET_ADDR" 1 > /dev/null
 
-		echo "$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 1 "$ADDRESS" > /dev/null
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 1 "$ADDRESS" > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" -generate 1 > /dev/null
 
 		printf "%s" "Waiting for lightning node funds... "
 
 		while ! $LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" listfunds | grep -q "outputs"
+		do
+			sleep 1
+		done
+
+		while ! $LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node2" listfunds | grep -q "outputs"
 		do
 			sleep 1
 		done
@@ -277,7 +282,7 @@ fund_nodes() {
 
 		$LCLI --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" fundchannel "$L2_NODE_ID" 1000000 > /dev/null
 
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 6 "$ADDRESS" > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" -generate 6  > /dev/null
 
 		printf "%s" "Waiting for confirmation... "
 
