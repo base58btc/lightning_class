@@ -3,3 +3,4 @@ goals
 .envrc
 .direnv/
 .bitcoin/
+.lightning_nodes/

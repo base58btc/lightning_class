@@ -96,11 +96,14 @@
           ];
           # Automatically run jupyter when entering the shell.
           shellHook = ''
-            mkdir -p .bitcoin
+            export PATH_TO_BITCOIN=$(pwd)/.bitcoin
+            export PATH_TO_LIGHTNING=$(pwd)/.lightning_nodes
+            mkdir -p $PATH_TO_BITCOIN
+            mkdir -p $PATH_TO_LIGHTNING
           '';
 
-          BITCOIN_BIN_DIR= "${pkgs.bitcoind}/bin";
-          PATH_TO_LIGHTNING = "${clightning}/bin";
+          BITCOIN_BIN_DIR = "${pkgs.bitcoind}/bin";
+          LIGHTNING_BIN_DIR= "${clightning}/bin";
         };
       });
 }

@@ -1,4 +1,11 @@
-DIR=.bitcoin
+if [ -z "$PATH_TO_BITCOIN" ]; then
+    DIR=.bitcoin
+else
+    DIR=$PATH_TO_BITCOIN
+fi
+
+echo "Using bitcoin dir: $DIR"
+
 if [[ -s $DIR/bitcoind.port ]]; then
   PORT=$(cat $DIR/bitcoind.port)
   echo "existing port found $PORT"
