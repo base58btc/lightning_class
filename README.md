@@ -20,7 +20,11 @@ startup regtest script.
 	source startup_regtest.sh
 ```
 
-To get two nodes up and running on regtest, run `start_ln`.
+To get two nodes up and running on regtest, run
+
+```
+	start_ln
+```
 
 This will print out a list of commands. Try
 
