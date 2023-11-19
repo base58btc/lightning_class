@@ -83,6 +83,10 @@
             pyln_bolt7
             bech32ref
 
+            # deps for startup_regtest.sh
+            libeatmydata
+            gawk
+
             (python3.withPackages (ps: with ps; with python3Packages; [
               jupyter
               ipython

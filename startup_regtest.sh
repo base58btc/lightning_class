@@ -28,11 +28,11 @@
 ##
 
 # Do the Right Thing if we're currently in top of srcdir.
-if [ -z "$PATH_TO_LIGHTNING" ] && [ -x cli/lightning-cli ] && [ -x lightningd/lightningd ]; then
-	PATH_TO_LIGHTNING=$(pwd)
+if [ -z "$LIGHTNING_BIN_DIR" ] && [ -x cli/lightning-cli ] && [ -x lightningd/lightningd ]; then
+	LIGHTNING_BIN_DIR=$(pwd)
 fi
 
-if [ -z "$PATH_TO_LIGHTNING" ]; then
+if [ -z "$LIGHTNING_BIN_DIR" ]; then
 	# Already installed maybe?  Prints
 	# shellcheck disable=SC2039
 	type lightning-cli || return
@@ -41,11 +41,17 @@ if [ -z "$PATH_TO_LIGHTNING" ]; then
 	LCLI=lightning-cli
 	LIGHTNINGD=lightningd
 else
-	LCLI="$PATH_TO_LIGHTNING"/lightning-cli
-	LIGHTNINGD="$PATH_TO_LIGHTNING"/lightningd
+	LCLI="$LIGHTNING_BIN_DIR"/lightning-cli
+	LIGHTNINGD="$LIGHTNING_BIN_DIR"/lightningd
 	# This mirrors "type" output above.
-	echo lightning-cli is "$LCLI"
-	echo lightningd is "$LIGHTNINGD"
+fi
+
+echo lightningd is "$LIGHTNINGD"
+echo lightning-cli is "$LCLI"
+echo ~~~~~~~
+
+if [ -z "$PATH_TO_LIGHTNING" ]; then
+    PATH_TO_LIGHTNING=/tmp
 fi
 
 if [ -z "$PATH_TO_BITCOIN" ]; then
@@ -61,9 +67,16 @@ fi
 BCLI="$BITCOIN_BIN_DIR"/bitcoin-cli
 BTCD="$BITCOIN_BIN_DIR"/bitcoind
 
-echo bitcoin datadir is "$PATH_TO_BITCOIN"
+network=regtest
+
 echo bitcoind is "$BTCD"
 echo bitcoin-cli is "$BCLI"
+echo ~~~~~~~
+echo lightning-dir will be in: "$PATH_TO_LIGHTNING"
+echo bitcoin datadir is "$PATH_TO_BITCOIN"
+echo ~~~~~~~
+echo network is "$network"
+echo ~~~~~~~
 
 
 start_nodes() {
@@ -91,12 +104,12 @@ start_nodes() {
 
 	for i in $(seq "$node_count"); do
 		socket=$(( 7070 + i * 101))
-		mkdir -p "/tmp/l$i-$network"
+		mkdir -p "$PATH_TO_LIGHTNING/l$i"
 		# Node config
-		cat <<- EOF > "/tmp/l$i-$network/config"
+		cat <<- EOF > "$PATH_TO_LIGHTNING/l$i/config"
 		network=$network
 		log-level=debug
-		log-file=/tmp/l$i-$network/log
+		log-file=$PATH_TO_LIGHTNING/l$i/$network/log
 		addr=localhost:$socket
 		allow-deprecated-apis=false
 		developer
@@ -115,13 +128,17 @@ start_nodes() {
 		invoices-onchain-fallback
 		EOF
 
+        # Make sure the log file exists?
+        mkdir -p "$PATH_TO_LIGHTNING"/l"$i"/"$network"
+        touch "$PATH_TO_LIGHTNING"/l"$i"/"$network"/log
+
 		# Start the lightning nodes
-		test -f "/tmp/l$i-$network/lightningd-$network.pid" || \
-			$EATMYDATA "$LIGHTNINGD" "--network=$network" "--lightning-dir=/tmp/l$i-$network" "--bitcoin-datadir=$PATH_TO_BITCOIN" "--database-upgrade=true" &
+		test -f "$PATH_TO_LIGHTNING/l$i/lightningd-$network.pid" || \
+			$EATMYDATA "$LIGHTNINGD" "--network=$network" "--lightning-dir=$PATH_TO_LIGHTNING/l$i" "--bitcoin-datadir=$PATH_TO_BITCOIN" "--database-upgrade=true" &
 		# shellcheck disable=SC2139 disable=SC2086
-		alias l$i-cli="$LCLI --lightning-dir=/tmp/l$i-$network"
+		alias l$i-cli="$LCLI --lightning-dir=$PATH_TO_LIGHTNING/l$i"
 		# shellcheck disable=SC2139 disable=SC2086
-		alias l$i-log="less /tmp/l$i-$network/log"
+		alias l$i-log="less $PATH_TO_LIGHTNING/l$i/$network/log"
 	done
 
 	if [ -z "$EATMYDATA" ]; then
@@ -136,31 +153,31 @@ start_nodes() {
 
 start_ln() {
 	# Start bitcoind in the background
-	test -f "$PATH_TO_BITCOIN/regtest/bitcoind.pid" || \
-		"$BTCD" -datadir="$PATH_TO_BITCOIN" -regtest -txindex -fallbackfee=0.00000253 -daemon
+	test -f "$PATH_TO_BITCOIN/$network/bitcoind.pid" || \
+		"$BTCD" -datadir="$PATH_TO_BITCOIN" -"$network" -txindex -fallbackfee=0.00000253 -daemon
 
 	# Wait for it to start.
-	while ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest ping; do echo "awaiting bitcoind..." && sleep 1; done
+	while ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -$network ping; do echo "awaiting bitcoind..." && sleep 1; done
 
 	# Check if default wallet exists
-	if ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest listwalletdir | jq -r '.wallets[] | .name' | grep -wqe 'default' ; then
+	if ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -$network listwalletdir | jq -r '.wallets[] | .name' | grep -wqe 'default' ; then
 		# wallet dir does not exist, create one
 		echo "Making \"default\" bitcoind wallet."
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest createwallet default >/dev/null 2>&1
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -$network createwallet default >/dev/null 2>&1
 	fi
 
 	# Check if default wallet is loaded
-	if ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest listwallets | jq -r '.[]' | grep -wqe 'default' ; then
+	if ! "$BCLI" -datadir="$PATH_TO_BITCOIN" -$network listwallets | jq -r '.[]' | grep -wqe 'default' ; then
 		echo "Loading \"default\" bitcoind wallet."
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest loadwallet default >/dev/null 2>&1
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -$network loadwallet default >/dev/null 2>&1
 	fi
 
 	# Kick it out of initialblockdownload if necessary
-	if "$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest getblockchaininfo | grep -q 'initialblockdownload.*true'; then
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest generatetoaddress 1 "$("$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest getnewaddress)" > /dev/null
+	if "$BCLI" -datadir="$PATH_TO_BITCOIN" -$network getblockchaininfo | grep -q 'initialblockdownload.*true'; then
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -$network generatetoaddress 1 "$("$BCLI" -datadir="$PATH_TO_BITCOIN" -$network getnewaddress)" > /dev/null
 	fi
 
-	alias bt-cli='"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest'
+	alias bt-cli='"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network"'
 
 	if [ -z "$1" ]; then
 		nodes=2
@@ -174,18 +191,23 @@ start_ln() {
 ensure_bitcoind_funds() {
 
 	if [ -z "$ADDRESS" ]; then
-		ADDRESS=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest "$WALLET" getnewaddress)
+		ADDRESS=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" getnewaddress)
 	fi
 
-	balance=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest "$WALLET" getbalance)
+	balance=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" getbalance)
+    min_bal=1
 
-	if [ 1 -eq "$(echo "$balance"'<1' | bc -l)" ]; then
+    echo Current bitcoind balance is $balance
+
+    if awk "BEGIN {exit !("$min_bal" >= "$balance")}"; then
 
 		printf "%s" "Mining into address " "$ADDRESS""... "
 
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest generatetoaddress 100 "$ADDRESS" > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 100 "$ADDRESS" > /dev/null
 
 		echo "done."
+
+	    echo "New bitcoind balance:" "$("$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" getbalance)"
 	fi
 }
 
@@ -210,11 +232,9 @@ fund_nodes() {
 
 	WALLET="-rpcwallet=$WALLET"
 
-	ADDRESS=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest "$WALLET" getnewaddress)
+	ADDRESS=$("$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" getnewaddress)
 
 	ensure_bitcoind_funds
-
-	echo "bitcoind balance:" "$("$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest "$WALLET" getbalance)"
 
 	last_node=""
 
@@ -229,22 +249,24 @@ fund_nodes() {
 		node2=$i
 		last_node=$i
 
-		L2_NODE_ID=$($LCLI -F --lightning-dir=/tmp/l"$node2"-regtest getinfo | sed -n 's/^id=\(.*\)/\1/p')
-		L2_NODE_PORT=$($LCLI -F --lightning-dir=/tmp/l"$node2"-regtest getinfo | sed -n 's/^binding\[0\].port=\(.*\)/\1/p')
+		L2_NODE_ID=$($LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node2" getinfo | sed -n 's/^id=\(.*\)/\1/p')
+		L2_NODE_PORT=$($LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node2" getinfo | sed -n 's/^binding\[0\].port=\(.*\)/\1/p')
 
-		$LCLI -H --lightning-dir=/tmp/l"$node1"-regtest connect "$L2_NODE_ID"@localhost:"$L2_NODE_PORT" > /dev/null
+		$LCLI -H --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" connect "$L2_NODE_ID"@localhost:"$L2_NODE_PORT" > /dev/null
 
-		L1_WALLET_ADDR=$($LCLI -F --lightning-dir=/tmp/l"$node1"-regtest newaddr | sed -n 's/^bech32=\(.*\)/\1/p')
+		L1_WALLET_ADDR=$($LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" newaddr | sed -n 's/^bech32=\(.*\)/\1/p')
 
 		ensure_bitcoind_funds
 
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest "$WALLET" sendtoaddress "$L1_WALLET_ADDR" 1 > /dev/null
+		echo "$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" sendtoaddress "$L1_WALLET_ADDR" 1 > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" "$WALLET" sendtoaddress "$L1_WALLET_ADDR" 1 > /dev/null
 
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest generatetoaddress 1 "$ADDRESS" > /dev/null
+		echo "$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 1 "$ADDRESS" > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 1 "$ADDRESS" > /dev/null
 
 		printf "%s" "Waiting for lightning node funds... "
 
-		while ! $LCLI -F --lightning-dir=/tmp/l"$node1"-regtest listfunds | grep -q "outputs"
+		while ! $LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" listfunds | grep -q "outputs"
 		do
 			sleep 1
 		done
@@ -253,13 +275,13 @@ fund_nodes() {
 
 		printf "%s" "Funding channel from node " "$node1" " to node " "$node2"". "
 
-		$LCLI --lightning-dir=/tmp/l"$node1"-regtest fundchannel "$L2_NODE_ID" 1000000 > /dev/null
+		$LCLI --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" fundchannel "$L2_NODE_ID" 1000000 > /dev/null
 
-		"$BCLI" -datadir="$PATH_TO_BITCOIN" -regtest generatetoaddress 6 "$ADDRESS" > /dev/null
+		"$BCLI" -datadir="$PATH_TO_BITCOIN" -"$network" generatetoaddress 6 "$ADDRESS" > /dev/null
 
 		printf "%s" "Waiting for confirmation... "
 
-		while ! $LCLI -F --lightning-dir=/tmp/l"$node1"-regtest listchannels | grep -q "channels"
+		while ! $LCLI -F --lightning-dir=$PATH_TO_LIGHTNING/l"$node1" listchannels | grep -q "channels"
 		do
 			sleep 1
 		done
@@ -270,12 +292,12 @@ fund_nodes() {
 }
 
 stop_nodes() {
-	network=${1:-regtest}
+	network=${1:-$network}
 	if [ -n "$LN_NODES" ]; then
 		for i in $(seq "$LN_NODES"); do
-			test ! -f "/tmp/l$i-$network/lightningd-$network.pid" || \
-				(kill "$(cat "/tmp/l$i-$network/lightningd-$network.pid")"; \
-				rm "/tmp/l$i-$network/lightningd-$network.pid")
+			test ! -f "$PATH_TO_LIGHTNING/l$i/lightningd-$network.pid" || \
+				(kill "$(cat "$PATH_TO_LIGHTNING/l$i/lightningd-$network.pid")"; \
+				rm "$PATH_TO_LIGHTNING/l$i/lightningd-$network.pid")
 			unalias "l$i-cli"
 			unalias "l$i-log"
 		done
@@ -293,8 +315,8 @@ stop_ln() {
 }
 
 destroy_ln() {
-	network=${1:-regtest}
-	rm -rf /tmp/l[0-9]*-"$network"
+	network=${1:-$network}
+	rm -rf "$PATH_TO_LIGHTNING"/l[0-9]*
 }
 
 start_elem() {
@@ -307,33 +329,33 @@ start_elem() {
 		fi
 	fi
 
-	test -f "$PATH_TO_ELEMENTS/liquid-regtest/bitcoin.pid" || \
-		elementsd -chain=liquid-regtest -printtoconsole -logtimestamps -nolisten -validatepegin=0 -con_blocksubsidy=5000000000 -daemon
+	test -f "$PATH_TO_ELEMENTS/liquid-$network/bitcoin.pid" || \
+		elementsd -chain=liquid-$network -printtoconsole -logtimestamps -nolisten -validatepegin=0 -con_blocksubsidy=5000000000 -daemon
 
 	# Wait for it to start.
-	while ! elements-cli -chain=liquid-regtest ping 2> /tmp/null; do echo "awaiting elementsd..." && sleep 1; done
+	while ! elements-cli -chain=liquid-$network ping 2> /tmp/null; do echo "awaiting elementsd..." && sleep 1; done
 
 	# Kick it out of initialblockdownload if necessary
-	if elements-cli -chain=liquid-regtest getblockchaininfo | grep -q 'initialblockdownload.*true'; then
-		elements-cli -chain=liquid-regtest generatetoaddress 1 "$(elements-cli -chain=liquid-regtest getnewaddress)" > /dev/null
+	if elements-cli -chain=liquid-$network getblockchaininfo | grep -q 'initialblockdownload.*true'; then
+		elements-cli -chain=liquid-$network generatetoaddress 1 "$(elements-cli -chain=liquid-$network getnewaddress)" > /dev/null
 	fi
-	alias et-cli='elements-cli -chain=liquid-regtest'
+	alias et-cli='elements-cli -chain=liquid-$network'
 
 	if [ -z "$1" ]; then
 		nodes=2
 	else
 		nodes="$1"
 	fi
-	start_nodes "$nodes" liquid-regtest
+	start_nodes "$nodes" liquid-$network
 	echo "	et-cli, stop_elem"
 }
 
 
 stop_elem() {
-	stop_nodes "$1" liquid-regtest
-	test ! -f "$PATH_TO_ELEMENTS/liquid-regtest/bitcoind.pid" || \
-		(kill "$(cat "$PATH_TO_ELEMENTS/liquid-regtest/bitcoind.pid")"; \
-		rm "$PATH_TO_ELEMENTS/liquid-regtest/bitcoind.pid")
+	stop_nodes "$1" liquid-$network
+	test ! -f "$PATH_TO_ELEMENTS/liquid-$network/bitcoind.pid" || \
+		(kill "$(cat "$PATH_TO_ELEMENTS/liquid-$network/bitcoind.pid")"; \
+		rm "$PATH_TO_ELEMENTS/liquid-$network/bitcoind.pid")
 
 	unset LN_NODES
 	unalias et-cli
@@ -343,8 +365,8 @@ connect() {
 	if [ -z "$1" ] || [ -z "$2" ]; then
 		printf "usage: connect 1 2\n"
 	else
-		to=$($LCLI --lightning-dir="/tmp/l$2-$network" -F getinfo | grep '^\(id\|binding\[0\]\.\(address\|port\)\)' | cut -d= -f2- | tr '\n' ' ' | (read -r ID ADDR PORT; echo "$ID@${ADDR}:$PORT"))
-		$LCLI --lightning-dir="/tmp/l$1-$network" connect "$to"
+		to=$($LCLI --lightning-dir="$PATH_TO_LIGHTNING/l$2" -F getinfo | grep '^\(id\|binding\[0\]\.\(address\|port\)\)' | cut -d= -f2- | tr '\n' ' ' | (read -r ID ADDR PORT; echo "$ID@${ADDR}:$PORT"))
+		$LCLI --lightning-dir="$PATH_TO_LIGHTNING/l$1" connect "$to"
 	fi
 }
 
